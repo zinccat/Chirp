@@ -8,14 +8,15 @@ from collections import deque
 import os
 import subprocess
 from key import key
+import atexit
 
-VERSION = "1.2"
+VERSION = "2.0"
 
 # Initialize the OpenAI API
-sb_base = "https://api.openai-sb.com/v1"
+# sb_base = "https://api.openai-sb.com/v1"
 
 openai.api_key = key
-openai.api_base = sb_base
+# openai.api_base = sb_base
 
 # Define a new event type for UI updates
 wxEVT_UPDATE_UI = wx.NewEventType()
@@ -58,6 +59,8 @@ class ChatFrame(wx.Frame):
     def __init__(self, parent, title):
         super(ChatFrame, self).__init__(parent, title=title, size=(700, 700))
 
+        atexit.register(self.terminate_local_model_server)
+
         panel = wx.Panel(self)
         sizer_main = wx.BoxSizer(wx.HORIZONTAL)
         # sizer_hist = wx.BoxSizer(wx.VERTICAL)
@@ -66,6 +69,16 @@ class ChatFrame(wx.Frame):
         # Add the chat history log as a list control on the left.
         self.chat_history_list = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
         self.chat_history_list.InsertColumn(0, 'Date', width=150)
+
+        # Add system prompt label and control
+        self.system_prompt_label = wx.StaticText(panel, label="System Prompt:")
+        default_prompt = "You are a helpful assistant."
+        self.system_prompt_ctrl = wx.TextCtrl(panel, value=default_prompt, style=wx.TE_MULTILINE)
+
+        # Adjust the sizers to include the system prompt control
+        sizer_system_prompt = wx.BoxSizer(wx.VERTICAL)
+        sizer_system_prompt.Add(self.system_prompt_label, proportion=0, flag=wx.EXPAND | wx.ALL, border=5)
+        sizer_system_prompt.Add(self.system_prompt_ctrl, proportion=0, flag=wx.EXPAND | wx.ALL, border=5) # change proportion to 0 to make it smaller
 
         # Clean history button
         self.clean_history_button = wx.Button(panel, label="Clean History")
@@ -78,6 +91,7 @@ class ChatFrame(wx.Frame):
 
         sizer_left = wx.BoxSizer(wx.VERTICAL)  # Sizer for the left side which contains chat history and the button
         sizer_left.Add(self.chat_history_list, 1, wx.EXPAND | wx.ALL, 5)
+        sizer_left.Add(sizer_system_prompt, 0, wx.EXPAND | wx.ALL, 5)  # change proportion to 0 to make it smaller
         sizer_left.Add(self.clean_history_button, 0, wx.EXPAND | wx.ALL, 5)
         sizer_left.Add(self.open_history_button, 0, wx.EXPAND | wx.ALL, 5)
 
@@ -88,12 +102,15 @@ class ChatFrame(wx.Frame):
         sizer_main.Add(sizer_chat, 1, wx.EXPAND)
         panel.SetSizer(sizer_main)
 
+
+
         # RadioBox for model selection
         self.models = ['GPT', 'Local Model']
         self.model_selector = wx.RadioBox(panel, label="Choose Model", choices=self.models, majorDimension=1, style=wx.RA_SPECIFY_ROWS)
         self.model_selector.Bind(wx.EVT_RADIOBOX, self.on_model_selection)
         sizer_chat.Add(self.model_selector, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
 
+        self.model = 'gpt-3.5-turbo'
 
         self.conversation_ctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE | wx.TE_READONLY)
         self.input_ctrl = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER, size=(400, 100))
@@ -118,9 +135,9 @@ class ChatFrame(wx.Frame):
         sizer_chat.Add(self.new_chat_button, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
 
         # Button to load model
-        self.load_model_button = wx.Button(panel, label="Load Model")
-        self.load_model_button.Bind(wx.EVT_BUTTON, self.on_load_model)
-        sizer_chat.Add(self.load_model_button, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
+        # self.load_model_button = wx.Button(panel, label="Load Model")
+        # self.load_model_button.Bind(wx.EVT_BUTTON, self.on_load_model)
+        # sizer_chat.Add(self.load_model_button, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
 
 
         # helpMenu = wx.Menu()
@@ -134,7 +151,7 @@ class ChatFrame(wx.Frame):
 
 
         # Initiate the conversation with a system message
-        self.messages = [{"role": "system", "content": "You are a helpful assistant."}]
+        self.messages = [{"role": "system", "content": self.system_prompt_ctrl.GetValue()}]
 
         # Bind the update UI event to a handler
         self.Bind(EVT_UPDATE_UI, self.on_update_ui)
@@ -188,20 +205,54 @@ class ChatFrame(wx.Frame):
 
         if selected_model == 'GPT':
             # Logic to switch to GPT model
-            pass
-        elif selected_model == 'Local Model' and hasattr(self, 'model_file_path'):
-            # Logic to switch to local model using self.model_file_path
-            pass
+            self.terminate_local_model_server()
+            openai.api_base = "https://api.openai.com/v1"
+            self.model = 'gpt-3.5-turbo'
 
-    def on_load_model(self, event):
-        """Event handler for loading a model."""
-        with wx.FileDialog(self, "Choose a model file", wildcard="Model files (*.bin)|*.bin", style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
-            if fileDialog.ShowModal() == wx.ID_CANCEL:
-                return     # User cancelled the action
+        elif selected_model == 'Local Model':
+            try:
+                with wx.FileDialog(self, "Choose a model file", wildcard="Model files (*.gguf)|*.gguf", 
+                                style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+                    if fileDialog.ShowModal() == wx.ID_CANCEL:
+                        return     # User cancelled the action
 
-        # Proceed with loading the file
-        self.model_file_path = fileDialog.GetPath()
-        # Now, self.model_file_path contains the path to the chosen file. You can use this to load the model.
+                # Proceed with loading the file
+                self.model_file_path = fileDialog.GetPath()
+                model_name = os.path.basename(self.model_file_path)
+                # Construct the command to start the server
+                cmd = [
+                    "python", "-m",
+                    "llama_cpp.server", "--model", "{}".format(self.model_file_path)
+                ]
+
+                # Start the server as a background process
+                self.server_process = subprocess.Popen(cmd)
+
+                # Wait for a short while and check if the process is still running
+                # This is a basic way to check for immediate failures in process start
+                self.server_process.poll()
+                if self.server_process.returncode is not None:
+                    raise Exception("Server process terminated immediately after start.")
+
+                # Logic to switch to local model using self.model_file_path
+                openai.api_base = "http://localhost:8000/v1"
+                self.model = f"../models/{model_name}"
+            except Exception as e:
+                # pop up a dialog to show error
+                wx.MessageBox(f"Error: {str(e)}", "Model Loading Error")
+
+        
+
+    def terminate_local_model_server(self):
+        """Helper method to terminate the local model server if it's running."""
+        if hasattr(self, 'server_process'):
+            self.server_process.terminate()
+            del self.server_process  # Remove the attribute after terminating the process
+
+    def on_close(self, event):
+        """Handler to gracefully shut down the server subprocess when the application closes."""
+        self.terminate_local_model_server()
+        event.Skip()
 
     def on_clean_history(self, event):
         # Clear the history file
@@ -210,7 +261,7 @@ class ChatFrame(wx.Frame):
         # Refresh the chat_history_list to reflect the cleared history
         self.chat_history_list.DeleteAllItems()
         self.all_chats = deque()
-        self.messages = []
+        self.messages = [{"role": "system", "content": self.system_prompt_ctrl.GetValue()}]
         self.current_chat_id = 0
         self.last_chat_id = self.current_chat_id
         self.start = True
@@ -254,7 +305,7 @@ class ChatFrame(wx.Frame):
         # Increase the chat ID
         self.current_chat_id = self.last_chat_id + 1
         self.last_chat_id = self.current_chat_id
-        self.messages = []
+        self.messages = [{"role": "system", "content": self.system_prompt_ctrl.GetValue()}]
         self.conversation_ctrl.SetValue('')
         self.start = True
         self.all_chats.appendleft(ChatSession(self.current_chat_id, self.messages))
@@ -299,6 +350,7 @@ class ChatFrame(wx.Frame):
         self.Show()
 
     def on_send(self, event):
+        self.messages[0] = {"role": "system", "content": self.system_prompt_ctrl.GetValue()}
         user_message = self.input_ctrl.GetValue()
         # Ensure there's a newline before the user's message
         if not self.conversation_ctrl.GetValue().endswith('\n'):
@@ -321,10 +373,12 @@ class ChatFrame(wx.Frame):
         self.input_ctrl.WriteText(text.GetText())
     
     def fetch_response(self):
+        # print(self.messages)
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=self.model,
             messages=self.messages,
             temperature=0,
+            max_tokens=1024,
             stream=True
         )
 
@@ -350,6 +404,7 @@ class ChatFrame(wx.Frame):
             wx.PostEvent(self, evt)
         
         self.messages.append({"role": "assistant", "content": ''.join(full_response)})
+        print(self.messages)
         self.save_current_chat_to_history()
         self.update_history_list()
 
