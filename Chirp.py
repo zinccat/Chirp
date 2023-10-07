@@ -56,7 +56,7 @@ class ChatSession:
 
 class ChatFrame(wx.Frame):
     def __init__(self, parent, title):
-        super(ChatFrame, self).__init__(parent, title=title, size=(500, 500))
+        super(ChatFrame, self).__init__(parent, title=title, size=(700, 700))
 
         panel = wx.Panel(self)
         sizer_main = wx.BoxSizer(wx.HORIZONTAL)
@@ -88,9 +88,15 @@ class ChatFrame(wx.Frame):
         sizer_main.Add(sizer_chat, 1, wx.EXPAND)
         panel.SetSizer(sizer_main)
 
+        # RadioBox for model selection
+        self.models = ['GPT', 'Local Model']
+        self.model_selector = wx.RadioBox(panel, label="Choose Model", choices=self.models, majorDimension=1, style=wx.RA_SPECIFY_ROWS)
+        self.model_selector.Bind(wx.EVT_RADIOBOX, self.on_model_selection)
+        sizer_chat.Add(self.model_selector, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
+
 
         self.conversation_ctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE | wx.TE_READONLY)
-        self.input_ctrl = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER)
+        self.input_ctrl = wx.TextCtrl(panel, style=wx.TE_PROCESS_ENTER, size=(400, 100))
         self.send_button = wx.Button(panel, label="Send")
         self.paste_button = wx.Button(panel, label="Paste")
 
@@ -110,6 +116,12 @@ class ChatFrame(wx.Frame):
         self.new_chat_button = wx.Button(panel, label="Start New Chat")
         self.new_chat_button.Bind(wx.EVT_BUTTON, self.on_new_chat)
         sizer_chat.Add(self.new_chat_button, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
+
+        # Button to load model
+        self.load_model_button = wx.Button(panel, label="Load Model")
+        self.load_model_button.Bind(wx.EVT_BUTTON, self.on_load_model)
+        sizer_chat.Add(self.load_model_button, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
+
 
         # helpMenu = wx.Menu()
         # self.versionMenuItem = helpMenu.Append(wx.ID_ANY, "Show Version", "Show application version")
@@ -170,6 +182,26 @@ class ChatFrame(wx.Frame):
 
         self.chat_history_list.Bind(wx.EVT_LIST_ITEM_SELECTED, self.onViewChat)
         self.update_history_list()
+
+    def on_model_selection(self, event):
+        selected_model = self.models[self.model_selector.GetSelection()]
+
+        if selected_model == 'GPT':
+            # Logic to switch to GPT model
+            pass
+        elif selected_model == 'Local Model' and hasattr(self, 'model_file_path'):
+            # Logic to switch to local model using self.model_file_path
+            pass
+
+    def on_load_model(self, event):
+        """Event handler for loading a model."""
+        with wx.FileDialog(self, "Choose a model file", wildcard="Model files (*.bin)|*.bin", style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return     # User cancelled the action
+
+        # Proceed with loading the file
+        self.model_file_path = fileDialog.GetPath()
+        # Now, self.model_file_path contains the path to the chosen file. You can use this to load the model.
 
     def on_clean_history(self, event):
         # Clear the history file
