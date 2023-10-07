@@ -131,7 +131,7 @@ class ChatFrame(wx.Frame):
 
 
         # RadioBox for model selection
-        self.models = ['GPT', 'Local Model']
+        self.models = ['GPT', 'Local Model (GGUF)']
         self.model_selector = wx.RadioBox(panel, label="Choose Model", choices=self.models, majorDimension=1, style=wx.RA_SPECIFY_ROWS)
         self.model_selector.Bind(wx.EVT_RADIOBOX, self.on_model_selection)
         sizer_chat.Add(self.model_selector, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
@@ -410,7 +410,7 @@ class ChatFrame(wx.Frame):
         response = openai.ChatCompletion.create(
             model=self.model,
             messages=self.messages,
-            temperature=0,
+            temperature=0.7,
             max_tokens=1024,
             stream=True
         )
