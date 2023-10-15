@@ -235,7 +235,7 @@ class ChatFrame(wx.Frame):
             openai.api_base = "https://api.openai.com/v1"
             self.model = 'gpt-3.5-turbo'
 
-        elif selected_model == 'Local Model':
+        elif selected_model == 'Local Model (GGUF)':
             try:
                 with wx.FileDialog(self, "Choose a model file", wildcard="Model files (*.gguf)|*.gguf", 
                                 style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
@@ -255,8 +255,8 @@ class ChatFrame(wx.Frame):
 
                 base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
                 server_script_path = os.path.join(base_path, 'llama_cpp', 'server', '__main__.py')
-                cmd = [python_path, server_script_path, "--model", self.model_file_path]
-                print(cmd)
+                cmd = [python_path, server_script_path, "--model", self.model_file_path] #, "--n_gpu_layers", "-1"]
+                # print(cmd)
 
                 # Start the server as a background process
                 self.server_process = subprocess.Popen(cmd)
@@ -410,7 +410,7 @@ class ChatFrame(wx.Frame):
         response = openai.ChatCompletion.create(
             model=self.model,
             messages=self.messages,
-            temperature=0.7,
+            temperature=0.3,
             max_tokens=1024,
             stream=True
         )
