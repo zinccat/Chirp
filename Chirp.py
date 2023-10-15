@@ -9,6 +9,10 @@ import os
 import subprocess
 from key import key
 import atexit
+import sys
+import shutil
+
+# sys.stderr = open('./log.txt', 'w')
 
 VERSION = "2.0"
 
@@ -21,6 +25,28 @@ openai.api_key = key
 # Define a new event type for UI updates
 wxEVT_UPDATE_UI = wx.NewEventType()
 EVT_UPDATE_UI = wx.PyEventBinder(wxEVT_UPDATE_UI, 1)
+
+def find_python():
+    # Attempt to find Python in PATH
+    python_path = shutil.which("python3") or shutil.which("python")
+    if python_path:
+        return python_path
+
+    # Check common paths
+    common_paths = [
+        "/usr/bin/python3",
+        "/usr/local/bin/python3",
+        "/usr/bin/python",
+        "/usr/local/bin/python",
+    ]
+    for path in common_paths:
+        if os.path.exists(path):
+            return path
+
+    # Return None if Python wasn't found
+    return None
+
+python_path = find_python()
 
 class ChatApp(wx.App):
     def OnInit(self):
@@ -105,7 +131,7 @@ class ChatFrame(wx.Frame):
 
 
         # RadioBox for model selection
-        self.models = ['GPT', 'Local Model']
+        self.models = ['GPT', 'Local Model (GGUF)']
         self.model_selector = wx.RadioBox(panel, label="Choose Model", choices=self.models, majorDimension=1, style=wx.RA_SPECIFY_ROWS)
         self.model_selector.Bind(wx.EVT_RADIOBOX, self.on_model_selection)
         sizer_chat.Add(self.model_selector, proportion=0, flag=wx.EXPAND | wx.ALL, border=10)
@@ -202,14 +228,14 @@ class ChatFrame(wx.Frame):
 
     def on_model_selection(self, event):
         selected_model = self.models[self.model_selector.GetSelection()]
+        self.terminate_local_model_server()
 
         if selected_model == 'GPT':
             # Logic to switch to GPT model
-            self.terminate_local_model_server()
             openai.api_base = "https://api.openai.com/v1"
             self.model = 'gpt-3.5-turbo'
 
-        elif selected_model == 'Local Model':
+        elif selected_model == 'Local Model (GGUF)':
             try:
                 with wx.FileDialog(self, "Choose a model file", wildcard="Model files (*.gguf)|*.gguf", 
                                 style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
@@ -220,10 +246,17 @@ class ChatFrame(wx.Frame):
                 self.model_file_path = fileDialog.GetPath()
                 model_name = os.path.basename(self.model_file_path)
                 # Construct the command to start the server
-                cmd = [
-                    "python", "-m",
-                    "llama_cpp.server", "--model", "{}".format(self.model_file_path)
-                ]
+                # cmd = [
+                #     "python", "-m",
+                #     "llama_cpp.server", "--model", self.model_file_path
+                # ]
+
+                # server_script_path = os.path.join(os.path.dirname(sys.executable), 'llama_cpp', 'server', '__main__.py')
+
+                base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+                server_script_path = os.path.join(base_path, 'llama_cpp', 'server', '__main__.py')
+                cmd = [python_path, server_script_path, "--model", self.model_file_path] #, "--n_gpu_layers", "-1"]
+                # print(cmd)
 
                 # Start the server as a background process
                 self.server_process = subprocess.Popen(cmd)
@@ -236,7 +269,7 @@ class ChatFrame(wx.Frame):
 
                 # Logic to switch to local model using self.model_file_path
                 openai.api_base = "http://localhost:8000/v1"
-                self.model = f"../models/{model_name}"
+                self.model = self.model_file_path #f"../models/{model_name}"
             except Exception as e:
                 # pop up a dialog to show error
                 wx.MessageBox(f"Error: {str(e)}", "Model Loading Error")
@@ -377,7 +410,7 @@ class ChatFrame(wx.Frame):
         response = openai.ChatCompletion.create(
             model=self.model,
             messages=self.messages,
-            temperature=0,
+            temperature=0.3,
             max_tokens=1024,
             stream=True
         )

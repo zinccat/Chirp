@@ -6,13 +6,26 @@ Usage:
 """
 
 from setuptools import setup
+import os
 
 APP = ['Chirp.py']
-DATA_FILES = []
+
+# Enumerate all files in llama_cpp.server to include them as data files
+server_path = 'llama_cpp/server'
+server_files = [os.path.join(server_path, f) for f in os.listdir(server_path) if os.path.isfile(os.path.join(server_path, f))]
+# print(server_files)
+# DATA_FILES = [(server_path, server_files)]
+DATA_FILES = [('llama_cpp', ['llama_cpp/__init__.py']),
+              ('llama_cpp/server', server_files)] #['llama_cpp/server/__init__.py', 'llama_cpp/server/__main__.py'])]
 OPTIONS = {
     'argv_emulation': True,
-    'packages': ['openai', 'wx', 'threading'],
+    'packages': ['openai', 'wx', 'threading', 'llama_cpp', 'llama_cpp.server'],
 }
+# OPTIONS = {
+#     'argv_emulation': True,
+#     'packages': ['openai', 'wx', 'threading', 'llama_cpp'],
+#     'includes': ['llama_cpp.server.*']
+# }
 
 setup(
     app=APP,

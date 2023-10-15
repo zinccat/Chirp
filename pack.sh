@@ -1,0 +1,1 @@
+pyinstaller --icon=icon.ico --onefile Chirp.py --windowed --add-data=./llama_cpp:./llama_cpp
